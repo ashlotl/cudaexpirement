@@ -19,6 +19,7 @@ void osmate(double tempRate, double massRate, double tempPush, double repulsionR
   //The only part that really matters if I get the rest to work:
   int i=blockIdx.x + blockDim.x + threadIdx.x;
   for (int it=0;it<numPoints;it++) {//Iterate through all points
+    // printf("%f",tx[it]);
     double dist=sqrt((x[it]-x[i])*(x[it]-x[i])+(y[it]-y[i])*(y[it]-y[i])+(z[it]-z[i])*(z[it]-z[i]));//This could be pre-calculated (these points are static). Whether the calculation happens should be a matter of how many points there are -- if there are too many points we will run out of memory, but if there are not as many it is a good idea. I'm leaving it for another day.
     if (dist!=0) {
       //Congratulations, you are not looking at the same point.
@@ -36,6 +37,7 @@ void osmate(double tempRate, double massRate, double tempPush, double repulsionR
     double tempEx=tempRate*(temp[i]-temp[it])/dist;
     newtemp[it]=temp[it]+tempEx;
     newtemp[i]=temp[i]-tempEx;//Unless we want to go supernova. We should also have a mechanic where a mass increase "creates" heat, a decrease sucks it up, there is an external source of heat and heat can radiate away... Etc.
+    // printf("%f",tx[i]);
   }
 }
 //To tweak
@@ -48,7 +50,7 @@ double GRAV_CONST=.0667;//Definitely not.
 
 int ALTITUDE=5;//Radius of planet.
 double LAYER_HEIGHT=.5;
-int RES = 3; //How often to subdivide the base cube
+int RES = 3;
 
 //In generation, values may exceed maximums and minimums during simulation.
 double leastAllowedMass=.001;
@@ -59,8 +61,54 @@ double mostAllowedTemp=50000;//A lot, hopefully not too much. Should check Planc
 
 double leastAllowedTrajectory=.0001;//Along axis, I'm not a madman
 double mostAllowedTrajectory=2;
+void delay(int number_of_millis)
+{
+    // Converting time into milli_seconds
+    // int milli_seconds = 1000 * number_of_seconds;
 
+    // Storing start time
+    clock_t start_time = clock();
+
+    // looping till required time is not acheived
+    while (clock() < start_time + number_of_millis)
+        ;
+}
+void serialize_float(char *buffer, float value)
+{
+    unsigned int ivalue = *((unsigned int*)&value); // warning assumes 32-bit "unsigned int"
+    buffer[0] = ivalue >> 24;
+    buffer[1] = ivalue >> 16;
+    buffer[2] = ivalue >> 8;
+    buffer[3] = ivalue;
+}
+char* doublearraytochar(double * vals, int len) {
+  char * result=(char *)malloc(len*sizeof(char)*4);
+  for (int i=0;i<len;i++) {
+    char * tempArr=(char *)malloc(sizeof(char)*4);
+    serialize_float(tempArr,vals[i]);
+    for (int i2=0;i2<4;i2++) {
+      result[i*4+i2]=tempArr[i2];
+    }
+  }
+  return result;
+}
+char * jsonArray(double * vals, int len, int bufPerNum, char * result, char * output) {
+  result[0]='[';
+  for (int i=0;i<len;i++) {
+    if (i!=len-1) {
+      snprintf(output,bufPerNum*2,"%f,",vals[i]);
+    } else {
+      snprintf(output,bufPerNum*2,"%f]",vals[i]);
+    }
+    strcat(result,output);
+    // for (int i2=0;i2<(bufPerNum+1)*sizeof(char);i2++) {
+    //   result[i*bufPerNum+i2+1]=output[i2];
+    // }
+  }
+  return result;
+}
 int main() {
+  srand ( time ( NULL));
   printf("Hello, you are hopefully simulating tectonics. If not, get out of here.\n");
   //Generate points...
   //The Declaration of Variable Allocation:
@@ -69,7 +117,7 @@ int main() {
     //You may notice we project a cube into a sphere. Primarily I'm too lazy to generate something like an icosahedron, secondarily it would not have fine resolution (only subdivisions) if we used an icosahedron, tertiarily this allows us to check for seams, which are screaming alarms something is wrong, and fourth uv spheres get ridiculously fine detail only at the poles, which is a waste.
     numSamples+=(int)(pow(RES,3)-pow(RES-2,3));
   }
-  printf("Allocating...\n");
+  printf("Allocating for %i samples (pass to your renderer your RES, %i, and your ALTITUDE, %i, like so: python display.py <RES> <ALTITUDE>)...\n", numSamples, RES,ALTITUDE);
   double * x = (double*)malloc(numSamples*sizeof(double));
   double * y = (double*)malloc(numSamples*sizeof(double));
   double * z = (double*)malloc(numSamples*sizeof(double));
@@ -116,32 +164,25 @@ int main() {
   int yi=0;
   int zi=0;
   int ai=0;
-  for (double alt=LAYER_HEIGHT;alt<=ALTITUDE;alt+=LAYER_HEIGHT) {
+  for (double alt=LAYER_HEIGHT;alt<ALTITUDE;alt+=LAYER_HEIGHT) {
     xi=0;
-    for (double xc=-1;xc<=1;xc+=4/RES) {
+    for (double xc=-1;xc<=1;xc+=2/(RES-1)) {
     yi=0;
-      for (double yc=-1;yc<=1;yc+=4/RES) {
+      for (double yc=-1;yc<=1;yc+=2/(RES-1)) {
         zi=0;
-        for (double zc=-1;zc<=1;zc+=4/RES) {
+        for (double zc=-1;zc<=1;zc+=2/(RES-1)) {
           if (xc==-1||xc==1||yc==-1||yc==1||zc==-1||zc==1) {
             //Cube coordinates projected:
             double altAdjust=alt/sqrt(pow(xc,2)+pow(yc,2.0)+pow(zc,2.0));
-            printf("here, index %i, xi %i, yi %i, zi %i, and ai %i\n",xi*RES*RES*RES+yi*RES*RES+zi*RES+ai,xi,yi,zi,ai);
             x[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=xc*altAdjust;
             y[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=yc*altAdjust;
             z[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=zc*altAdjust;
             //Trajectories:
-            srand ( time ( NULL));
-            printf("or here, not that it's any different\n");
             tx[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=((double)rand()/RAND_MAX)*(mostAllowedTrajectory-leastAllowedTrajectory)+leastAllowedTrajectory;
-            srand ( time ( NULL)+1);
             ty[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=((double)rand()/RAND_MAX)*(mostAllowedTrajectory-leastAllowedTrajectory)+leastAllowedTrajectory;
-            srand ( time ( NULL)+2);
             tz[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=((double)rand()/RAND_MAX)*(mostAllowedTrajectory-leastAllowedTrajectory)+leastAllowedTrajectory;
             //Temp, mass:
-            srand ( time ( NULL)+3);
             mass[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=((double)rand()/RAND_MAX)*(mostAllowedMass-leastAllowedMass)+leastAllowedMass;//Too lazy to change variable names despite grammatical innacuracy.
-            srand ( time ( NULL)+4);//I add 1,2,3, and 4 to the seed in case your cpu is a blazing fast juggernaut.
             temp[xi*RES*RES*RES+yi*RES*RES+zi*RES+ai]=((double)rand()/RAND_MAX)*(mostAllowedTemp-leastAllowedTemp)+leastAllowedTemp;
           }
           zi++;
@@ -177,7 +218,7 @@ int main() {
   // int rate=deviceProp.clockRate;
   //Dumping/Plagiarizing some server code:
   int sockfd;
-  char buffer[MAXLINE];
+  char buffer[numSamples*32];
   char *hello = "Hello from server";
   struct sockaddr_in servaddr, cliaddr;
 
@@ -192,8 +233,16 @@ int main() {
 
   // Filling server information
   servaddr.sin_family    = AF_INET; // IPv4
+  // inet_pton(AF_INET, GetIP().c_str(), &(servaddr.sin_addr));
   servaddr.sin_addr.s_addr = INADDR_ANY;
   servaddr.sin_port = htons(PORT);
+  sockfd=socket(AF_INET,SOCK_DGRAM,0);
+  if (sockfd<0) {
+    perror("Error on socket()");
+  }
+  int optval = 1;
+  setsockopt(sockfd,SOL_SOCKET,SO_REUSEADDR,(const void *)&optval,sizeof(int));
+
   printf("WorKInG...\n");
   // Bind the socket with the server address
   if ( bind(sockfd, (const struct sockaddr *)&servaddr,
@@ -203,28 +252,41 @@ int main() {
       exit(EXIT_FAILURE);
   }
   printf("Beginning Loop\n");
-  int len;
-  while(true) {
+  int len,n;
+  n = recvfrom(sockfd, (char *)buffer, MAXLINE,
+                MSG_WAITALL, ( struct sockaddr *) &cliaddr,
+                (socklen_t *)&len);
+  buffer[n]='\0';
+  printf("%s,%i",buffer,n);
+  char * one=(char*)calloc(numSamples*32,sizeof(char));
+  one[0]='1';
+  char * two=(char*)calloc(numSamples*32,sizeof(char));
+  two[0]='2';
+  char * result=(char*)calloc((numSamples*33+1),sizeof(char));
+  char * output=(char *)calloc((numSamples*32+1),sizeof(char));
+  while(n>0) {
     //Use numSamples for core count, one thread each. In the future we'll want to get multiple threads for when we run out of cores.
     osmate<<<numSamples,1>>>(TEMP_RATE,MASS_RATE,TEMP_PUSH,REPULSION_RATE,numSamples,ALTITUDE,GRAV_CONST,d_x,d_y,d_z,d_tx,d_ty,d_tz,d_newtx,d_newty,d_newtz,d_mass,d_temp,d_newmass,d_newtemp);
+    cudaDeviceSynchronize();
+    // printf("Synchronized.\n");
     cudaMemcpy(temp,d_newtemp,sizeof(double)*numSamples,cudaMemcpyDeviceToHost);
     cudaMemcpy(mass,d_newmass,sizeof(double)*numSamples,cudaMemcpyDeviceToHost);
-    cudaMemcpy(d_tx,d_newtx,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
-    cudaMemcpy(d_ty,d_newty,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
-    cudaMemcpy(d_tz,d_newtz,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_newtx,d_tx,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_newty,d_ty,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
+    cudaMemcpy(d_newtz,d_tz,sizeof(double)*numSamples,cudaMemcpyDeviceToDevice);
     //Send temp,mass
-    sendto(sockfd, (const char *)("1"), 1, MSG_CONFIRM, (const struct sockaddr *) &cliaddr,len);
-    for (int i=0;i<numSamples;i++) {
-      if (temp[i]!=0) {
-        printf("%f\n",temp[i]);
-      }
-      if (mass[i]!=0) {
-        printf("%f\n",mass[i]);
-      }
-    }
-    sendto(sockfd, temp, numSamples, MSG_CONFIRM, (const struct sockaddr *) &cliaddr,len);
-    sendto(sockfd, (const char *)("2"), 1, MSG_CONFIRM, (const struct sockaddr *) &cliaddr,len);
-    sendto(sockfd, mass, numSamples, MSG_CONFIRM, (const struct sockaddr *) &cliaddr,len);
+    // delay(10000);
+    sendto(sockfd, one, numSamples*32, MSG_DONTWAIT, (const struct sockaddr *) &cliaddr,len);
+    // delay(10000);
+    // printf(jsonArray(temp,numSamples,numSamples*32));
+    // printf("\n");
+    jsonArray(temp,numSamples,numSamples*32,result,output);
+    sendto(sockfd, result, numSamples*32, MSG_DONTWAIT, (const struct sockaddr *) &cliaddr,len);
+    // delay(10000);
+    sendto(sockfd, two, numSamples*32, MSG_DONTWAIT, (const struct sockaddr *) &cliaddr,len);
+    // delay(10000);
+    jsonArray(mass,numSamples,numSamples*32,result,output);
+    sendto(sockfd, result, numSamples*32, MSG_DONTWAIT, (const struct sockaddr *) &cliaddr,len);
     //Update so we can go again
     cudaMemcpy(d_temp,temp,sizeof(double)*numSamples,cudaMemcpyHostToDevice);
     cudaMemcpy(d_mass,mass,sizeof(double)*numSamples,cudaMemcpyHostToDevice);
