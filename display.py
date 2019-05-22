@@ -1,9 +1,9 @@
 import pygame, socket, sys, json, time, math
 
 pygame.init()
-screen=pygame.display.set_mode((200,500),pygame.RESIZABLE)
+screen=pygame.display.set_mode((500,200),pygame.RESIZABLE)
 pygame.display.set_caption("Scary port v2084")
-UDP_IP = "192.168.2.165"
+UDP_IP = "localhost"
 UDP_PORT = 2084
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -75,6 +75,7 @@ while True:
             changed = True
     # print("Receiving...")
     # time.sleep(1)
+    print("Waiting...")
     data, addr = sock.recvfrom(numSamples*32)
     data=data.rstrip('\x00')
     print("Parsing...",data)
@@ -90,6 +91,6 @@ while True:
                 largest=dp
             # print(int(100*dp/largest))
             color=(float(255*dp/largest),float(100),float(100),float(1))
-            pygame.draw.circle(screen,color,(int((points[itr][0]-points[itr][2])/2*scale+w/2),int((points[itr][1]-points[itr][2])/2*scale+h/2)),2,0)
+            pygame.draw.circle(screen,color,(int((points[itr][0]-points[itr][2]+alt)/2*scale+w/2),int((points[itr][1]-points[itr][2]+alt)/2*scale+h/2)),2,0)
             itr+=1
         pygame.display.flip()
